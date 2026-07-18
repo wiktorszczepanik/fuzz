@@ -1,9 +1,10 @@
-use std::{env, process};
-use fuzz::config::Args;
+use clap::Parser;
+use fuzz::config::Cli;
+use std::process;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let config: Args = Args::build(&args).unwrap_or_else(|err| {
+    let config = Cli::parse();
+    config.validate().unwrap_or_else(|err| {
         println!("parsing arguments problem: {err}");
         process::exit(1);
     });
@@ -11,5 +12,5 @@ fn main() {
         println!("application error: {err}");
         process::exit(1);
     }
-    process::exit(1)
+    process::exit(0)
 }

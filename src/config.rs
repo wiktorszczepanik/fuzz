@@ -1,112 +1,146 @@
+use std::fs;
 use std::path::PathBuf;
+use clap::Parser;
 
-#[derive(Debug)]
-pub struct Args {
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+#[command(name = "fuzz")]
+#[command(version = "1.0")]
+#[command(about = "Does awesome things", long_about = None)]
+pub struct Cli {
     pub text: String,
     pub file_path: PathBuf,
-    pub top: i8
+    #[arg(short, long, default_value_t = 100)]
+    pub top: u8,
+    #[arg(short, long, default_value_t = 0)]
+    pub over: u8,
+    #[arg(long)]
+    pub lines: bool,
+    #[arg(long)]
+    pub percent: bool
 }
 
-impl Args {
-    pub fn build(args: &[String]) -> Result<Args, &'static str> {
-        if args.len() < 3 {
-            return Err("not enough arguments")
-        } else if args.len() > 4  {
-            return Err("incorrect number of arguments")
-        }
-        let text: String = Self::assign_fuzz_text(&args[1]);
-        let file_path: PathBuf = Self::assign_file_path(&args[2])?;
-        if args.len() == 3 {
-            let top: i8 = 100;
-            return Ok(Args {text, file_path, top})
-        }
-        let top: i8 = Self::assign_top(&args[3])?;
-        Ok(Args {text, file_path, top})
+impl Cli {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        Self::validate_fuzz_text(&self.text)?;
+        Self::validate_file_path(&self.file_path)?;
+        Self::validate_top(&self.top)?;
+        Ok(())
     }
 
-    fn assign_fuzz_text(text: &str) -> String {
-        text.to_string()
+    fn validate_fuzz_text(text: &str) -> Result<(), &'static str> {
+        if text.is_empty() {
+            Err("fuzz text cannot be empty")
+        } else {
+            Ok(())
+        }
     }
 
-    fn assign_file_path(file_path: &String) -> Result<PathBuf, &'static str> {
-        let path = PathBuf::from(file_path);
+    fn validate_file_path(path: &PathBuf) -> Result<(), &'static str> {
         if !path.exists() {
             return Err("file does not exits")
         }
         if !path.is_file() {
             return Err("provided path is not a file")
         }
-        Ok(path)
+        if fs::metadata(path)?.len() == 0 { // TODO: correct
+            return Err("provided file cannot be empty")
+        }
+        Ok(())
     }
 
-    fn assign_top(top_value: &String) -> Result<i8, &'static str> {
-        let top: i8 = top_value
-            .parse()
-            .map_err(|_| "top must be valid integer")?;
-        if !(top > 0 && top < 100) {
-            return Err("invalid \'top\' range")
+    fn validate_top(top: &u8) -> Result<(), &'static str> {
+        if top < &1 {
+            return Err("min \'top\' range equals 1")
         }
-        Ok(top)
+        if  top > &100 {
+            return Err("max \'top\' range equals 100")
+        }
+        Ok(())
     }
 }
 #[cfg(test)]
 mod tests {
-    use crate::config::Args;
+    use std::path::PathBuf;
+    use crate::config::Cli;
 
-    // const CORRECT_FILE_PATH: &str = "../data/poem.txt";
-    // const INCORRECT_FILE_PATH: &str = "../data/incorrect_file.txt";
-    const INPUT: &str = include_str!("../data/poem.txt");
+    const CORRECT_INPUT: &str = include_str!("data/not_empty_file.txt");
 
     #[test]
     fn test_file_included() {
-        assert!(!INPUT.is_empty());
+        assert!(!CORRECT_INPUT.is_empty());
     }
 
     #[test]
-    fn input_none_arguments() {
-        let args: Vec<String> = vec![];
-        let result= Args::build(&args);
-        assert_eq!(result.unwrap_err(), "not enough arguments")
-    }
-
-    #[test]
-    fn input_too_few_arguments() {
-        let args: Vec<String> = vec![String::from("xyz")];
-        let result= Args::build(&args);
-        assert_eq!(result.unwrap_err(), "not enough arguments")
-    }
-
-    #[test]
-    fn input_too_many_arguments() {
-        let args: Vec<String> = vec![
-            String::from("fuzz"),
-            String::from("xyz"),
-            String::from("some_file.txt"),
-            String::from("50"),
-            String::from("xxx")
-        ];
-        let result= Args::build(&args);
-        assert_eq!(result.unwrap_err(), "incorrect number of arguments")
-    }
-
-    #[test]
-    fn assign_correct_fuzz_text() {
+    fn validate_correct_fuzz_text() {
         let text: String = String::from("some text");
-        let result = Args::assign_fuzz_text(&*text);
-        assert_eq!(result, text)
-
+        let result = Cli::validate_fuzz_text(&text);
+        assert_eq!(result, Ok(()))
     }
 
-    // #[test]
-    // fn assign_correct_file_path() {
-    //     let result = Args::assign_file_path(&CORRECT_FILE_PATH.to_string());
-    //     assert_eq!(result.unwrap().exists(), true)
-    // }
-    //
-    // #[test]
-    // fn assign_incorrect_file_path() {
-    //     let result = Args::assign_file_path(&INCORRECT_FILE_PATH.to_string());
-    //     assert_eq!(result.unwrap().exists(), false)
-    // }
+    #[test]
+    fn validate_empty_fuzz_text() {
+        let text: String = String::from("");
+        let result = Cli::validate_fuzz_text(&text);
+        assert_eq!(result, Err("fuzz text cannot be empty"))
+    }
+    #[test]
+    fn validate_correct_file_path() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("data")
+            .join("not_empty_file.txt");
+        let result = Cli::validate_file_path(&path);
+        assert_eq!(result, Ok(()))
+    }
+
+    #[test]
+    fn validate_incorrect_file_path() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("data")
+            .join("xyz.txt");
+        let result = Cli::validate_file_path(&path);
+        assert_eq!(result, Err("file does not exits"))
+    }
+
+    #[test]
+    fn validate_incorrect_directory_path() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("data");
+        let result = Cli::validate_file_path(&path);
+        assert_eq!(result, Err("provided path is not a file"))
+    }
+
+    fn validate_empty_file() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("data")
+            .join("empty_file.txt");
+        let result = Cli::validate_file_path(&path);
+        assert_eq!(result, Err("provided file cannot be empty"))
+    }
+
+    #[test]
+    fn validate_correct_top_value() {
+        let top: u8 = 50;
+        let result = Cli::validate_top(&top);
+        assert_eq!(result, Ok(()))
+    }
+
+    #[test]
+    fn validate_too_high_top_value() {
+        let top: u8 = 120;
+        let result = Cli::validate_top(&top);
+        assert_eq!(result, Err("max \'top\' range equals 100"))
+    }
+
+    #[test]
+    fn validate_too_low_top_value() {
+        let top: u8 = 0;
+        let result = Cli::validate_top(&top);
+        assert_eq!(result, Err("min \'top\' range equals 1"))
+    }
 
 }
