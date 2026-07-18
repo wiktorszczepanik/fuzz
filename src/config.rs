@@ -1,6 +1,6 @@
+use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -14,10 +14,10 @@ pub struct Cli {
     pub top: u8,
     #[arg(short, long, default_value_t = 0)]
     pub over: u8,
-    #[arg(long)]
+    #[arg(short, long)]
     pub lines: bool,
-    #[arg(long)]
-    pub percent: bool
+    #[arg(short, long)]
+    pub percent: bool,
 }
 
 impl Cli {
@@ -25,6 +25,7 @@ impl Cli {
         Self::validate_fuzz_text(&self.text)?;
         Self::validate_file_path(&self.file_path)?;
         Self::validate_top(&self.top)?;
+        Self::validate_over(&self.over)?;
         Ok(())
     }
 
@@ -38,31 +39,42 @@ impl Cli {
 
     fn validate_file_path(path: &PathBuf) -> Result<(), &'static str> {
         if !path.exists() {
-            return Err("file does not exits")
+            return Err("file does not exits");
         }
         if !path.is_file() {
-            return Err("provided path is not a file")
+            return Err("provided path is not a file");
         }
-        if fs::metadata(path)?.len() == 0 { // TODO: correct
-            return Err("provided file cannot be empty")
+        if fs::metadata(path).unwrap().len() == 0 {
+            return Err("provided file cannot be empty");
         }
         Ok(())
     }
 
     fn validate_top(top: &u8) -> Result<(), &'static str> {
         if top < &1 {
-            return Err("min \'top\' range equals 1")
+            return Err("min \'top\' range equals 1");
         }
-        if  top > &100 {
-            return Err("max \'top\' range equals 100")
+        if top > &100 {
+            return Err("max \'top\' range equals 100");
+        }
+        Ok(())
+    }
+
+    fn validate_over(over: &u8) -> Result<(), &'static str> {
+        if over < &0 {
+            return Err("min \'over\' range equals 0");
+        }
+        if over > &100 {
+            return Err("max \'over\' range equals 100");
         }
         Ok(())
     }
 }
+
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use crate::config::Cli;
+    use std::path::PathBuf;
 
     const CORRECT_INPUT: &str = include_str!("data/not_empty_file.txt");
 
@@ -113,6 +125,7 @@ mod tests {
         assert_eq!(result, Err("provided path is not a file"))
     }
 
+    #[test]
     fn validate_empty_file() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("src")
@@ -143,4 +156,17 @@ mod tests {
         assert_eq!(result, Err("min \'top\' range equals 1"))
     }
 
+    #[test]
+    fn validate_correct_over_value() {
+        let over: u8 = 50;
+        let result = Cli::validate_over(&over);
+        assert_eq!(result, Ok(()))
+    }
+
+    #[test]
+    fn validate_too_high_over_value() {
+        let over: u8 = 120;
+        let result = Cli::validate_over(&over);
+        assert_eq!(result, Err("max \'over\' range equals 100"))
+    }
 }

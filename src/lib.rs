@@ -1,12 +1,20 @@
+use crate::config::Cli;
 use std::error::Error;
 use std::fs;
-use crate::config::Cli;
+use std::path::PathBuf;
+use crate::search::Search;
 
 pub mod config;
-mod tests;
+pub mod search;
 
 pub fn run(config: Cli) -> Result<(), Box<dyn Error>> {
-    let _content = fs::read_to_string(config.file_path)
-        .expect("cannot read file content");
+    let _content = collect_file_content(&config.file_path);
+    let _search = Search::new();
     Ok(())
+}
+
+fn collect_file_content(file: &PathBuf) -> Result<String, &'static str> {
+    let content = fs::read_to_string(file)
+        .expect("cannot read file content");
+    Ok(content)
 }
