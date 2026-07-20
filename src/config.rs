@@ -10,14 +10,12 @@ use std::path::PathBuf;
 pub struct Cli {
     pub text: String,
     pub file_path: PathBuf,
-    #[arg(short, long, default_value_t = 100)]
+    #[arg(short, long, default_value_t = 50)]
     pub top: u8,
-    #[arg(short, long, default_value_t = 0)]
-    pub over: u8,
     #[arg(short, long)]
     pub lines: bool,
     #[arg(short, long)]
-    pub percent: bool,
+    pub score: bool,
 }
 
 impl Cli {
@@ -25,7 +23,6 @@ impl Cli {
         Self::validate_fuzz_text(&self.text)?;
         Self::validate_file_path(&self.file_path)?;
         Self::validate_top(&self.top)?;
-        Self::validate_over(&self.over)?;
         Ok(())
     }
 
@@ -59,30 +56,12 @@ impl Cli {
         }
         Ok(())
     }
-
-    fn validate_over(over: &u8) -> Result<(), &'static str> {
-        if over < &0 {
-            return Err("min \'over\' range equals 0");
-        }
-        if over > &100 {
-            return Err("max \'over\' range equals 100");
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::config::Cli;
     use std::path::PathBuf;
-
-    const CORRECT_INPUT: &str = include_str!("data/not_empty_file.txt");
-
-    #[test]
-    fn test_file_included() {
-        assert!(!CORRECT_INPUT.is_empty());
-    }
-
     #[test]
     fn validate_correct_fuzz_text() {
         let text: String = String::from("some text");
@@ -154,19 +133,5 @@ mod tests {
         let top: u8 = 0;
         let result = Cli::validate_top(&top);
         assert_eq!(result, Err("min \'top\' range equals 1"))
-    }
-
-    #[test]
-    fn validate_correct_over_value() {
-        let over: u8 = 50;
-        let result = Cli::validate_over(&over);
-        assert_eq!(result, Ok(()))
-    }
-
-    #[test]
-    fn validate_too_high_over_value() {
-        let over: u8 = 120;
-        let result = Cli::validate_over(&over);
-        assert_eq!(result, Err("max \'over\' range equals 100"))
     }
 }
