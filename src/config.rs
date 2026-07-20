@@ -61,7 +61,9 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use crate::config::Cli;
-    use std::path::PathBuf;
+    use std::fs::write;
+    use tempfile::{NamedTempFile, TempDir};
+
     #[test]
     fn validate_correct_fuzz_text() {
         let text: String = String::from("some text");
@@ -75,43 +77,35 @@ mod tests {
         let result = Cli::validate_fuzz_text(&text);
         assert_eq!(result, Err("fuzz text cannot be empty"))
     }
+
     #[test]
     fn validate_correct_file_path() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("data")
-            .join("not_empty_file.txt");
-        let result = Cli::validate_file_path(&path);
-        assert_eq!(result, Ok(()))
+        let file = NamedTempFile::new().unwrap();
+        write(file.path(), "some content").unwrap();
+        let result = Cli::validate_file_path(&file.path().to_path_buf());
+        assert_eq!(result, Ok(()));
     }
 
     #[test]
     fn validate_incorrect_file_path() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("data")
-            .join("xyz.txt");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.txt");
         let result = Cli::validate_file_path(&path);
-        assert_eq!(result, Err("file does not exits"))
+        assert_eq!(result, Err("file does not exits"));
     }
 
     #[test]
     fn validate_incorrect_directory_path() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("data");
-        let result = Cli::validate_file_path(&path);
-        assert_eq!(result, Err("provided path is not a file"))
+        let dir = TempDir::new().unwrap();
+        let result = Cli::validate_file_path(&dir.path().to_path_buf());
+        assert_eq!(result, Err("provided path is not a file"));
     }
 
     #[test]
     fn validate_empty_file() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src")
-            .join("data")
-            .join("empty_file.txt");
-        let result = Cli::validate_file_path(&path);
-        assert_eq!(result, Err("provided file cannot be empty"))
+        let file = NamedTempFile::new().unwrap();
+        let result = Cli::validate_file_path(&file.path().to_path_buf());
+        assert_eq!(result, Err("provided file cannot be empty"));
     }
 
     #[test]
