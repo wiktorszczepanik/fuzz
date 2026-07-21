@@ -2,11 +2,12 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query};
 use tantivy::{DocAddress, Index, IndexWriter, Score, doc, schema::*};
 
 pub struct Search {
     line_field: Field,
+    line_number_field: Field,
     index: Index,
     writer: IndexWriter,
     line_counter: usize,
@@ -16,12 +17,14 @@ impl Search {
     pub fn new() -> tantivy::Result<Self> {
         let mut schema_builder = Schema::builder();
         let line_field = schema_builder.add_text_field("line", TEXT | STORED);
+        let line_number_field = schema_builder.add_u64_field("line_number", STORED);
         let schema = schema_builder.build();
         let index = Index::create_in_ram(schema.clone());
         let writer = index.writer(50_000_000)?;
         let line_counter = 0usize;
         Ok(Self {
             line_field,
+            line_number_field,
             index,
             writer,
             line_counter,
@@ -31,27 +34,30 @@ impl Search {
     pub fn index_lines(&mut self, file_path: PathBuf) -> Result<(), &'static str> {
         let file = File::open(file_path).map_err(|_| "cannot open the file")?;
         let reader = BufReader::new(file);
-        for line in reader.lines() {
-            self.line_counter += 1;
+        for (line_number, line) in reader.lines().enumerate() {
             let line = line.map_err(|_| "cannot read line")?;
+            self.line_counter += 1;
             self.writer
-                .add_document(doc!(self.line_field => line))
+                .add_document(
+                    doc!(self.line_field => line, self.line_number_field => (line_number + 1) as u64),
+                )
                 .map_err(|_| "cannot add document")?;
         }
         self.writer.commit().map_err(|_| "cannot commit index")?;
         Ok(())
     }
 
-    pub fn query(&mut self, text: String, top: u8) -> Result<Vec<(Score, String)>, &'static str> {
+    pub fn query(
+        &mut self,
+        text: String,
+        top: u8,
+    ) -> Result<Vec<(usize, Score, String)>, &'static str> {
         let reader = self
             .index
             .reader()
             .map_err(|_| "could not setup query reader")?;
         let searcher = reader.searcher();
-        let query_parser = QueryParser::for_index(&self.index, vec![self.line_field]);
-        let query = query_parser
-            .parse_query(text.as_str())
-            .map_err(|_| "incorrect query syntax")?;
+        let query = self.subqueries(text.as_str());
         let top_lines = Self::calculate_top_lines(top, self.line_counter);
         let top_docs: Vec<(Score, DocAddress)> = searcher
             .search(&query, &TopDocs::with_limit(top_lines).order_by_score())
@@ -61,11 +67,14 @@ impl Search {
             let retrieved_doc = searcher
                 .doc::<TantivyDocument>(doc_address)
                 .map_err(|_| "retrieved document error")?;
-            if let Some(line) = retrieved_doc
+            let line = retrieved_doc
                 .get_first(self.line_field)
-                .and_then(|v| v.as_str())
-            {
-                results.push((score, line.to_string()));
+                .and_then(|v| v.as_str());
+            let line_number = retrieved_doc
+                .get_first(self.line_number_field)
+                .and_then(|v| v.as_u64());
+            if let (Some(line), Some(line_number)) = (line, line_number) {
+                results.push((line_number as usize, score, line.to_string()));
             }
         }
         Ok(results)
@@ -74,6 +83,23 @@ impl Search {
     fn calculate_top_lines(top_percent: u8, lines: usize) -> usize {
         let top: usize = top_percent as usize;
         std::cmp::max(1, (top * lines + 99) / 100)
+    }
+
+    fn subqueries(&self, text: &str) -> BooleanQuery {
+        let subqueries = text
+            .split_whitespace()
+            .map(|word| {
+                (
+                    Occur::Should,
+                    Box::new(FuzzyTermQuery::new(
+                        Term::from_field_text(self.line_field, word),
+                        2,
+                        true,
+                    )) as Box<dyn Query>,
+                )
+            })
+            .collect();
+        BooleanQuery::new(subqueries)
     }
 }
 
@@ -107,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn add_lines_should_index_file() {
+    fn index_lines_should_index_file() {
         let file = NamedTempFile::new().unwrap();
         write(file.path(), "Lorem\nipsum\ndolor\n").unwrap();
         let mut search = Search::new().unwrap();
@@ -116,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn add_lines_should_fail_for_missing_file() {
+    fn index_lines_should_fail_for_missing_file() {
         let mut search = Search::new().unwrap();
         let result = search.index_lines(PathBuf::from("does_not_exist.txt"));
         assert_eq!(result, Err("cannot open the file"));
@@ -130,9 +156,28 @@ mod tests {
         search.index_lines(file.path().to_path_buf()).unwrap();
         let result = search.query("Lorem".to_string(), 100).unwrap();
         assert_eq!(result.len(), 2);
-        let lines: Vec<String> = result.into_iter().map(|(_, l)| l).collect();
+        let lines: Vec<String> = result.into_iter().map(|(_, _, line)| line).collect();
         assert!(lines.contains(&"Lorem ipsum".to_string()));
         assert!(lines.contains(&"Lorem else".to_string()));
+    }
+
+    #[test]
+    fn query_should_return_line_numbers() {
+        let file = NamedTempFile::new().unwrap();
+        write(
+            file.path(),
+            "first line\nLorem ipsum\nthird line\nLorem else\n",
+        )
+        .unwrap();
+        let mut search = Search::new().unwrap();
+        search.index_lines(file.path().to_path_buf()).unwrap();
+        let result = search.query("Lorem".to_string(), 100).unwrap();
+        let line_numbers: Vec<usize> = result
+            .into_iter()
+            .map(|(line_number, _, _)| line_number)
+            .collect();
+        assert!(line_numbers.contains(&2));
+        assert!(line_numbers.contains(&4));
     }
 
     #[test]
@@ -150,17 +195,25 @@ mod tests {
     }
 
     #[test]
-    fn query_should_return_error_for_invalid_query() {
+    fn query_should_return_empty_for_invalid_text() {
         let file = NamedTempFile::new().unwrap();
-        write(
-            file.path(),
-            "Lorem ipsum\ndolor sit amet,\nad ad enim eiusmod sed\n",
-        )
-        .unwrap();
+        write(file.path(), "Lorem ipsum\n").unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query("\"".to_string(), 100);
-        assert_eq!(result, Err("incorrect query syntax"));
+        let result = search.query("\"".to_string(), 100).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn query_should_match_typo() {
+        let file = NamedTempFile::new().unwrap();
+        write(file.path(), "Lorem ipsum\n").unwrap();
+        let mut search = Search::new().unwrap();
+        search.index_lines(file.path().to_path_buf()).unwrap();
+        // typo "Lorem" -> "Lroem"
+        let result = search.query("Lroem".to_string(), 100).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].2, "Lorem ipsum");
     }
 
     #[test]

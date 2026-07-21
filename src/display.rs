@@ -1,35 +1,87 @@
 use tantivy::Score;
 
-pub fn show(results: Vec<(Score, String)>, lines_numbers: bool, score: bool) {
+pub fn show(results: Vec<(usize, Score, String)>, lines_numbers: bool, score: bool) {
     match (lines_numbers, score) {
-        (false, false) => display_plain(results),
-        (true, false) => display_with_line_numbers(results),
-        (false, true) => display_with_score(results),
-        (true, true) => display_with_line_numbers_and_score(results),
+        (false, false) => println!("{}", display_plain(results)),
+        (true, false) => println!("{}", display_with_line_numbers(results)),
+        (false, true) => println!("{}", display_with_score(results)),
+        (true, true) => println!("{}", display_with_line_numbers_and_score(results)),
     }
 }
 
-fn display_plain(results: Vec<(Score, String)>) {
-    for (_, line) in results {
-        println!("{}", line)
-    }
+fn display_plain(results: Vec<(usize, Score, String)>) -> String {
+    results
+        .into_iter()
+        .map(|(_, _, line)| line)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn display_with_line_numbers(results: Vec<(Score, String)>) {
-    for (line_number, (_, line)) in results.into_iter().enumerate() {
-        println!("{}: {}", line_number + 1, line);
-    }
+fn display_with_line_numbers(results: Vec<(usize, Score, String)>) -> String {
+    results
+        .into_iter()
+        .map(|(line_number, _, line)| format!("{}: {}", line_number, line))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn display_with_score(results: Vec<(Score, String)>) {
-    for (score, line) in results {
-        println!("[{score:.3}] {line}");
-    }
+fn display_with_score(results: Vec<(usize, Score, String)>) -> String {
+    results
+        .into_iter()
+        .map(|(_, score, line)| format!("[{score:.3}] {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
-fn display_with_line_numbers_and_score(results: Vec<(Score, String)>) {
-    let mut line_number: usize = 1;
-    for (score, line) in results {
-        println!("{line_number}: [{score:.3}] {line}");
-        line_number += 1;
+
+fn display_with_line_numbers_and_score(results: Vec<(usize, Score, String)>) -> String {
+    results
+        .into_iter()
+        .map(|(line_number, score, line)| format!("{}: [{score:.3}] {}", line_number, line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::display::{
+        display_plain, display_with_line_numbers, display_with_line_numbers_and_score,
+        display_with_score,
+    };
+    use tantivy::Score;
+
+    fn results() -> Vec<(usize, Score, String)> {
+        vec![
+            (10, 1.23456, "Lorem ipsum".to_string()),
+            (25, 2.0, "Dolor sit".to_string()),
+        ]
+    }
+
+    #[test]
+    fn display_plain_should_show_only_lines() {
+        assert_eq!(display_plain(results()), "Lorem ipsum\nDolor sit");
+    }
+
+    #[test]
+    fn display_with_line_numbers_should_show_real_line_numbers() {
+        assert_eq!(
+            display_with_line_numbers(results()),
+            "10: Lorem ipsum\n25: Dolor sit"
+        );
+    }
+
+    #[test]
+    fn display_with_score_should_show_scores() {
+        assert_eq!(
+            display_with_score(results()),
+            "[1.235] Lorem ipsum\n[2.000] Dolor sit"
+        );
+    }
+
+    #[test]
+    fn display_with_line_numbers_and_score_should_show_both() {
+        assert_eq!(
+            display_with_line_numbers_and_score(results()),
+            "10: [1.235] Lorem ipsum\n25: [2.000] Dolor sit"
+        );
     }
 }
