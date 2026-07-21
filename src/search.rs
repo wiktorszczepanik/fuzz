@@ -90,17 +90,83 @@ impl Search {
     }
 
     // Currently selected algorithm
+    // fn calculate_fuzzy_score(&self, query: &str, line: &str) -> f64 {
+    //     let query = query.to_lowercase();
+    //     line.split_whitespace()
+    //         .map(|word| {
+    //             normalized_levenshtein(
+    //                 &query,
+    //                 &word.to_lowercase(),
+    //             )
+    //         })
+    //         .max_by(|a, b| a.partial_cmp(b).unwrap())
+    //         .unwrap_or(0.0)
+    // }
+
+
     fn calculate_fuzzy_score(&self, query: &str, line: &str) -> f64 {
-        let query = query.to_lowercase();
-        line.split_whitespace()
-            .map(|word| {
-                normalized_levenshtein(
-                    &query,
-                    &word.to_lowercase(),
-                )
-            })
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(0.0)
+        let mut score: f64 = 0.0;
+        if query.is_empty() || line.is_empty() {
+            return score
+        }
+        // Exact phrase
+        Self::calculate_exact_start_values(&mut score, query, line);
+        // Lowercase phrase
+        let lower_query = query.to_lowercase();
+        let lower_line = line.to_lowercase();
+        Self::calculate_exact_lowercase_values(&mut score, lower_query.as_str(), lower_line.as_str());
+        // Token matching
+        let query_tokens: Vec<&str> = query.split_whitespace().collect();
+        Self::calculate_any_exact_token_match(&mut score, &query_tokens, line);
+        let lower_query_tokens: Vec<&str> = lower_query.split_whitespace().collect();
+        Self::calculate_any_lowercase_token_match(&mut score, &lower_query_tokens, lower_line.as_str());
+        // Order bonus
+        // Distance bonus
+        // Word boundary
+        // Character subsequence
+        // Length penalty
+
+        score
+    }
+
+    fn calculate_exact_start_values(score: &mut f64, query: &str, line: &str) {
+        if query == line {
+            *score += 100.0;
+        }
+        if line.starts_with(query) {
+            *score += 95.0;
+        }
+        if line.contains(query) {
+            *score += 90.0;
+        }
+    }
+
+    fn calculate_exact_lowercase_values(score: &mut f64, lower_query: &str, lower_line: &str) {
+        if lower_query == lower_line {
+            *score += 80.0;
+        }
+        if lower_line.starts_with(lower_query) {
+            *score += 75.0;
+        }
+        if lower_line.contains(lower_query) {
+            *score += 70.0;
+        }
+    }
+
+    fn calculate_any_exact_token_match(score: &mut f64, query_tokens: &[&str], line: &str) {
+        for token in query_tokens {
+            if let Some(pos) = line.find(token) {
+                *score += 25.0;
+            }
+        }
+    }
+
+    fn calculate_any_lowercase_token_match(score: &mut f64, query_tokens: &[&str], line: &str) {
+        for token in query_tokens {
+            if let Some(pos) = line.find(token) {
+                *score += 15.0;
+            }
+        }
     }
 
     fn calculate_top_lines(top_percent: u8, lines: usize) -> usize {
