@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
+use strsim::normalized_levenshtein;
 use tantivy::collector::TopDocs;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query};
 use tantivy::{DocAddress, Index, IndexWriter, Score, doc, schema::*};
@@ -51,7 +52,7 @@ impl Search {
         &mut self,
         text: String,
         top: u8,
-    ) -> Result<Vec<(usize, Score, String)>, &'static str> {
+    ) -> Result<Vec<(usize, f64, String)>, &'static str> {
         let reader = self
             .index
             .reader()
@@ -63,7 +64,7 @@ impl Search {
             .search(&query, &TopDocs::with_limit(top_lines).order_by_score())
             .map_err(|_| "docs selection error")?;
         let mut results = Vec::with_capacity(top_docs.len());
-        for (score, doc_address) in top_docs {
+        for (_, doc_address) in top_docs {
             let retrieved_doc = searcher
                 .doc::<TantivyDocument>(doc_address)
                 .map_err(|_| "retrieved document error")?;
@@ -74,10 +75,32 @@ impl Search {
                 .get_first(self.line_number_field)
                 .and_then(|v| v.as_u64());
             if let (Some(line), Some(line_number)) = (line, line_number) {
-                results.push((line_number as usize, score, line.to_string()));
+                let fuzzy_score = self.calculate_fuzzy_score(&text, line);
+                results.push((line_number as usize, fuzzy_score, line.to_string()));
             }
         }
+        Self::sort_results(&mut results);
         Ok(results)
+    }
+
+    fn sort_results(results: &mut Vec<(usize, f64, String)>) {
+        results.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1).unwrap()
+        });
+    }
+
+    // Currently selected algorithm
+    fn calculate_fuzzy_score(&self, query: &str, line: &str) -> f64 {
+        let query = query.to_lowercase();
+        line.split_whitespace()
+            .map(|word| {
+                normalized_levenshtein(
+                    &query,
+                    &word.to_lowercase(),
+                )
+            })
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0)
     }
 
     fn calculate_top_lines(top_percent: u8, lines: usize) -> usize {

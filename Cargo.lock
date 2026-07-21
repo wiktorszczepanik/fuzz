@@ -482,6 +482,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "predicates",
+ "strsim",
  "tantivy",
  "tempfile",
 ]

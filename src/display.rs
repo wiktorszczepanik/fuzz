@@ -1,6 +1,4 @@
-use tantivy::Score;
-
-pub fn show(results: Vec<(usize, Score, String)>, lines_numbers: bool, score: bool) {
+pub fn show(results: Vec<(usize, f64, String)>, lines_numbers: bool, score: bool) {
     match (lines_numbers, score) {
         (false, false) => println!("{}", display_plain(results)),
         (true, false) => println!("{}", display_with_line_numbers(results)),
@@ -9,7 +7,7 @@ pub fn show(results: Vec<(usize, Score, String)>, lines_numbers: bool, score: bo
     }
 }
 
-fn display_plain(results: Vec<(usize, Score, String)>) -> String {
+fn display_plain(results: Vec<(usize, f64, String)>) -> String {
     results
         .into_iter()
         .map(|(_, _, line)| line)
@@ -17,7 +15,7 @@ fn display_plain(results: Vec<(usize, Score, String)>) -> String {
         .join("\n")
 }
 
-fn display_with_line_numbers(results: Vec<(usize, Score, String)>) -> String {
+fn display_with_line_numbers(results: Vec<(usize, f64, String)>) -> String {
     results
         .into_iter()
         .map(|(line_number, _, line)| format!("{}: {}", line_number, line))
@@ -25,7 +23,7 @@ fn display_with_line_numbers(results: Vec<(usize, Score, String)>) -> String {
         .join("\n")
 }
 
-fn display_with_score(results: Vec<(usize, Score, String)>) -> String {
+fn display_with_score(results: Vec<(usize, f64, String)>) -> String {
     results
         .into_iter()
         .map(|(_, score, line)| format!("[{score:.3}] {line}"))
@@ -33,7 +31,7 @@ fn display_with_score(results: Vec<(usize, Score, String)>) -> String {
         .join("\n")
 }
 
-fn display_with_line_numbers_and_score(results: Vec<(usize, Score, String)>) -> String {
+fn display_with_line_numbers_and_score(results: Vec<(usize, f64, String)>) -> String {
     results
         .into_iter()
         .map(|(line_number, score, line)| format!("{}: [{score:.3}] {}", line_number, line))
@@ -47,9 +45,8 @@ mod tests {
         display_plain, display_with_line_numbers, display_with_line_numbers_and_score,
         display_with_score,
     };
-    use tantivy::Score;
 
-    fn results() -> Vec<(usize, Score, String)> {
+    fn results() -> Vec<(usize, f64, String)> {
         vec![
             (10, 1.23456, "Lorem ipsum".to_string()),
             (25, 2.0, "Dolor sit".to_string()),
