@@ -1,7 +1,7 @@
 use assert_cmd::Command;
+use predicates::boolean::PredicateBooleanExt;
 use predicates::str::contains;
 use std::fs::write;
-use predicates::boolean::PredicateBooleanExt;
 use tempfile::NamedTempFile;
 
 #[test]
@@ -17,9 +17,25 @@ fn cli_should_find_matching_lines() {
 }
 
 #[test]
+fn cli_should_find_matching_lines_with_typo() {
+    let file = NamedTempFile::new().unwrap();
+    write(
+        file.path(),
+        "Lorem ipsum\ndolor sit amet\nLorem else\nNext line...",
+    )
+    .unwrap();
+    Command::cargo_bin("fuzz")
+        .unwrap()
+        .args(["Lroem", file.path().to_str().unwrap()]) // typo
+        .assert()
+        .success()
+        .stdout(contains("Lorem ipsum").and(contains("Lorem else")));
+}
+
+#[test]
 fn cli_should_support_fuzzy_search() {
     let file = NamedTempFile::new().unwrap();
-    write(file.path(), "Lorem ipsum\n").unwrap();
+    write(file.path(), "Lorem ipsum\nOne\ntwo").unwrap();
     Command::cargo_bin("fuzz")
         .unwrap()
         .args(["Lroem", file.path().to_str().unwrap()])
@@ -71,7 +87,11 @@ fn cli_should_show_line_numbers_and_scores() {
 #[test]
 fn cli_should_respect_top_limit() {
     let file = NamedTempFile::new().unwrap();
-    write(file.path(), "apple one\napple two\napple three\napple four\n").unwrap();
+    write(
+        file.path(),
+        "apple one\napple two\napple three\napple four\n",
+    )
+    .unwrap();
     Command::cargo_bin("fuzz")
         .unwrap()
         .args(["apple", file.path().to_str().unwrap(), "--top", "25"])
