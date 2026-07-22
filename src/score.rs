@@ -137,7 +137,6 @@ impl Score {
             if char == current {
                 consecutive += 1;
                 *score += 3.0 + consecutive as f64;
-
                 if let Some(next) = query_chars.next() {
                     current = next;
                 } else {
@@ -154,5 +153,98 @@ impl Score {
         if diff > 0 {
             *score -= diff as f64 * 0.10;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::score::Score;
+
+    fn calculate(query: &str, line: &str) -> f64 {
+        Score::calculate_line(query, line)
+    }
+
+    #[test]
+    fn empty_query_returns_zero() {
+        assert_eq!(calculate("", "hello world"), 0.0);
+    }
+
+    #[test]
+    fn empty_line_returns_zero() {
+        assert_eq!(calculate("hello", ""), 0.0);
+    }
+
+    #[test]
+    fn exact_match_scores_higher_than_partial_match() {
+        let exact = calculate("hello", "hello");
+        let partial = calculate("hello", "hello world");
+        assert!(exact > partial);
+    }
+
+    #[test]
+    fn exact_case_sensitive_match_gets_bonus() {
+        let exact = calculate("hello", "hello");
+        let different_case = calculate("hello", "Hello");
+        assert!(exact > different_case);
+    }
+
+    #[test]
+    fn lowercase_match_is_case_insensitive() {
+        let lower = calculate("hello", "HELLO");
+        assert!(lower > 0.0);
+    }
+
+    #[test]
+    fn token_matching_increases_score() {
+        let one_token = calculate("hello", "hello world");
+        let two_tokens = calculate("hello world", "hello world");
+        assert!(two_tokens > one_token);
+    }
+
+    #[test]
+    fn token_order_gives_bonus() {
+        let correct_order = calculate("hello world", "hello world");
+        let wrong_order = calculate("hello world", "world hello");
+        assert!(correct_order > wrong_order);
+    }
+
+    #[test]
+    fn closer_tokens_score_higher() {
+        let close = calculate("hello world", "hello world");
+        let far = calculate("hello world", "hello very very very long world");
+        assert!(close > far);
+    }
+
+    #[test]
+    fn word_boundary_scores_better_than_inside_word_match() {
+        let boundary = calculate("cat", "cat dog");
+        let inside_word = calculate("cat", "concatenate");
+        assert!(boundary > inside_word);
+    }
+
+    #[test]
+    fn subsequence_matching_works() {
+        let subsequence = calculate("abc", "a_b_c");
+        assert!(subsequence > 0.0);
+    }
+
+    #[test]
+    fn shorter_lines_are_preferred() {
+        let short = calculate("rust", "rust");
+        let long = calculate("rust", "rust programming language book");
+        assert!(short > long);
+    }
+
+    #[test]
+    fn unrelated_text_scores_lower() {
+        let match_score = calculate("rust", "rust programming");
+        let unrelated_score = calculate("rust", "javascript frontend");
+        assert!(match_score > unrelated_score);
+    }
+
+    #[test]
+    fn exact_match_has_high_score() {
+        let score = calculate("lorem ipsum", "lorem ipsum");
+        assert!(score > 200.0, "expected strong exact match, got {}", score);
     }
 }
