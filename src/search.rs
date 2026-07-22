@@ -1,9 +1,9 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use strsim::normalized_levenshtein;
 use tantivy::collector::TopDocs;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query};
+use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::{DocAddress, Index, IndexWriter, Score, doc, schema::*};
 
 pub struct Search {
@@ -15,20 +15,32 @@ pub struct Search {
 }
 
 impl Search {
+
     pub fn new() -> tantivy::Result<Self> {
         let mut schema_builder = Schema::builder();
-        let line_field = schema_builder.add_text_field("line", TEXT | STORED);
+        let text_indexing = TextFieldIndexing::default()
+            .set_tokenizer("lowercase")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        let text_options = TextOptions::default()
+            .set_indexing_options(text_indexing)
+            .set_stored();
+        let line_field = schema_builder.add_text_field("line", text_options);
         let line_number_field = schema_builder.add_u64_field("line_number", STORED);
         let schema = schema_builder.build();
         let index = Index::create_in_ram(schema.clone());
+        index.tokenizers().register(
+            "lowercase",
+            TextAnalyzer::builder(SimpleTokenizer::default())
+                .filter(LowerCaser)
+                .build(),
+        );
         let writer = index.writer(50_000_000)?;
-        let line_counter = 0usize;
         Ok(Self {
             line_field,
             line_number_field,
             index,
             writer,
-            line_counter,
+            line_counter: 0,
         })
     }
 
@@ -50,7 +62,7 @@ impl Search {
 
     pub fn query(
         &mut self,
-        text: String,
+        text: &String,
         top: u8,
     ) -> Result<Vec<(usize, f64, String)>, &'static str> {
         let reader = self
@@ -75,98 +87,10 @@ impl Search {
                 .get_first(self.line_number_field)
                 .and_then(|v| v.as_u64());
             if let (Some(line), Some(line_number)) = (line, line_number) {
-                let fuzzy_score = self.calculate_fuzzy_score(&text, line);
-                results.push((line_number as usize, fuzzy_score, line.to_string()));
+                results.push((line_number as usize, 0.0, line.to_string()));
             }
         }
-        Self::sort_results(&mut results);
         Ok(results)
-    }
-
-    fn sort_results(results: &mut Vec<(usize, f64, String)>) {
-        results.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap()
-        });
-    }
-
-    // Currently selected algorithm
-    // fn calculate_fuzzy_score(&self, query: &str, line: &str) -> f64 {
-    //     let query = query.to_lowercase();
-    //     line.split_whitespace()
-    //         .map(|word| {
-    //             normalized_levenshtein(
-    //                 &query,
-    //                 &word.to_lowercase(),
-    //             )
-    //         })
-    //         .max_by(|a, b| a.partial_cmp(b).unwrap())
-    //         .unwrap_or(0.0)
-    // }
-
-
-    fn calculate_fuzzy_score(&self, query: &str, line: &str) -> f64 {
-        let mut score: f64 = 0.0;
-        if query.is_empty() || line.is_empty() {
-            return score
-        }
-        // Exact phrase
-        Self::calculate_exact_start_values(&mut score, query, line);
-        // Lowercase phrase
-        let lower_query = query.to_lowercase();
-        let lower_line = line.to_lowercase();
-        Self::calculate_exact_lowercase_values(&mut score, lower_query.as_str(), lower_line.as_str());
-        // Token matching
-        let query_tokens: Vec<&str> = query.split_whitespace().collect();
-        Self::calculate_any_exact_token_match(&mut score, &query_tokens, line);
-        let lower_query_tokens: Vec<&str> = lower_query.split_whitespace().collect();
-        Self::calculate_any_lowercase_token_match(&mut score, &lower_query_tokens, lower_line.as_str());
-        // Order bonus
-        // Distance bonus
-        // Word boundary
-        // Character subsequence
-        // Length penalty
-
-        score
-    }
-
-    fn calculate_exact_start_values(score: &mut f64, query: &str, line: &str) {
-        if query == line {
-            *score += 100.0;
-        }
-        if line.starts_with(query) {
-            *score += 95.0;
-        }
-        if line.contains(query) {
-            *score += 90.0;
-        }
-    }
-
-    fn calculate_exact_lowercase_values(score: &mut f64, lower_query: &str, lower_line: &str) {
-        if lower_query == lower_line {
-            *score += 80.0;
-        }
-        if lower_line.starts_with(lower_query) {
-            *score += 75.0;
-        }
-        if lower_line.contains(lower_query) {
-            *score += 70.0;
-        }
-    }
-
-    fn calculate_any_exact_token_match(score: &mut f64, query_tokens: &[&str], line: &str) {
-        for token in query_tokens {
-            if let Some(pos) = line.find(token) {
-                *score += 25.0;
-            }
-        }
-    }
-
-    fn calculate_any_lowercase_token_match(score: &mut f64, query_tokens: &[&str], line: &str) {
-        for token in query_tokens {
-            if let Some(pos) = line.find(token) {
-                *score += 15.0;
-            }
-        }
     }
 
     fn calculate_top_lines(top_percent: u8, lines: usize) -> usize {
@@ -176,6 +100,7 @@ impl Search {
 
     fn subqueries(&self, text: &str) -> BooleanQuery {
         let subqueries = text
+            .to_lowercase()
             .split_whitespace()
             .map(|word| {
                 (
@@ -243,7 +168,7 @@ mod tests {
         write(file.path(), "Lorem ipsum\ndolor sit amet...\nLorem else\n").unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query("Lorem".to_string(), 100).unwrap();
+        let result = search.query(&"Lorem".to_string(), 100).unwrap();
         assert_eq!(result.len(), 2);
         let lines: Vec<String> = result.into_iter().map(|(_, _, line)| line).collect();
         assert!(lines.contains(&"Lorem ipsum".to_string()));
@@ -260,7 +185,7 @@ mod tests {
         .unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query("Lorem".to_string(), 100).unwrap();
+        let result = search.query(&"Lorem".to_string(), 100).unwrap();
         let line_numbers: Vec<usize> = result
             .into_iter()
             .map(|(line_number, _, _)| line_number)
@@ -279,7 +204,7 @@ mod tests {
         .unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query("none".to_string(), 100).unwrap();
+        let result = search.query(&"none".to_string(), 100).unwrap();
         assert!(result.is_empty());
     }
 
@@ -289,7 +214,7 @@ mod tests {
         write(file.path(), "Lorem ipsum\n").unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query("\"".to_string(), 100).unwrap();
+        let result = search.query(&"\"".to_string(), 100).unwrap();
         assert!(result.is_empty());
     }
 
@@ -300,7 +225,7 @@ mod tests {
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
         // typo "Lorem" -> "Lroem"
-        let result = search.query("Lroem".to_string(), 100).unwrap();
+        let result = search.query(&"Lroem".to_string(), 100).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].2, "Lorem ipsum");
     }
@@ -315,7 +240,7 @@ mod tests {
         .unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query("apple".to_string(), 25).unwrap();
+        let result = search.query(&"apple".to_string(), 25).unwrap();
         assert_eq!(result.len(), 1);
     }
 }
