@@ -1,3 +1,8 @@
+const GREEN: &str = "\x1b[32m";
+const YELLOW: &str = "\x1b[33m";
+// const RED: &str = "\x1b[31m";
+const RESET: &str = "\x1b[0m";
+
 pub fn show(results: Vec<(usize, f64, String)>, lines_numbers: bool, score: bool) {
     match (lines_numbers, score) {
         (false, false) => println!("{}", display_plain(results)),
@@ -18,15 +23,15 @@ fn display_plain(results: Vec<(usize, f64, String)>) -> String {
 fn display_with_line_numbers(results: Vec<(usize, f64, String)>) -> String {
     results
         .into_iter()
-        .map(|(line_number, _, line)| format!("{}: {}", line_number, line))
-        .collect::<Vec<_>>()
-        .join("\n")
+        .map(|(line_number, _, line)| format!("{GREEN}{line_number}:{RESET} {line}"))
+            .collect::<Vec<_>>()
+            .join("\n")
 }
 
 fn display_with_score(results: Vec<(usize, f64, String)>) -> String {
     results
         .into_iter()
-        .map(|(_, score, line)| format!("[{score:.3}] {line}"))
+        .map(|(_, score, line)| format!("{YELLOW}[{score:07.3}]{RESET} {line}"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -34,7 +39,7 @@ fn display_with_score(results: Vec<(usize, f64, String)>) -> String {
 fn display_with_line_numbers_and_score(results: Vec<(usize, f64, String)>) -> String {
     results
         .into_iter()
-        .map(|(line_number, score, line)| format!("{}: [{score:.3}] {}", line_number, line))
+        .map(|(line_number, score, line)| format!("{GREEN}{line_number}:{RESET} {YELLOW}[{score:07.3}]{RESET} {line}"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -62,7 +67,7 @@ mod tests {
     fn display_with_line_numbers_should_show_real_line_numbers() {
         assert_eq!(
             display_with_line_numbers(results()),
-            "10: Lorem ipsum\n25: Dolor sit"
+            "\u{1b}[32m10:\u{1b}[0m Lorem ipsum\n\u{1b}[32m25:\u{1b}[0m Dolor sit"
         );
     }
 
@@ -70,7 +75,7 @@ mod tests {
     fn display_with_score_should_show_scores() {
         assert_eq!(
             display_with_score(results()),
-            "[1.235] Lorem ipsum\n[2.000] Dolor sit"
+            "\u{1b}[33m[001.235]\u{1b}[0m Lorem ipsum\n\u{1b}[33m[002.000]\u{1b}[0m Dolor sit"
         );
     }
 
@@ -78,7 +83,7 @@ mod tests {
     fn display_with_line_numbers_and_score_should_show_both() {
         assert_eq!(
             display_with_line_numbers_and_score(results()),
-            "10: [1.235] Lorem ipsum\n25: [2.000] Dolor sit"
+            "\u{1b}[32m10:\u{1b}[0m \u{1b}[33m[001.235]\u{1b}[0m Lorem ipsum\n\u{1b}[32m25:\u{1b}[0m \u{1b}[33m[002.000]\u{1b}[0m Dolor sit"
         );
     }
 }

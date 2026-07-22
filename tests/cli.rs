@@ -53,7 +53,7 @@ fn cli_should_show_line_numbers() {
         .args(["Lorem", file.path().to_str().unwrap(), "--lines"])
         .assert()
         .success()
-        .stdout(contains("2: Lorem ipsum"));
+        .stdout(contains("\x1b[32m2:\x1b[0m Lorem ipsum\n"));
 }
 
 #[test]
