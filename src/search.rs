@@ -15,7 +15,6 @@ pub struct Search {
 }
 
 impl Search {
-
     pub fn new() -> tantivy::Result<Self> {
         let mut schema_builder = Schema::builder();
         let text_indexing = TextFieldIndexing::default()
@@ -60,20 +59,18 @@ impl Search {
         Ok(())
     }
 
-    pub fn query(
-        &mut self,
-        text: &String,
-        top: u8,
-    ) -> Result<Vec<(usize, f64, String)>, &'static str> {
+    pub fn query(&mut self, text: &String) -> Result<Vec<(usize, f64, String)>, &'static str> {
         let reader = self
             .index
             .reader()
             .map_err(|_| "could not setup query reader")?;
         let searcher = reader.searcher();
         let query = self.subqueries(text.as_str());
-        let top_lines = Self::calculate_top_lines(top, self.line_counter);
         let top_docs: Vec<(Score, DocAddress)> = searcher
-            .search(&query, &TopDocs::with_limit(top_lines).order_by_score())
+            .search(
+                &query,
+                &TopDocs::with_limit(self.line_counter).order_by_score(),
+            )
             .map_err(|_| "docs selection error")?;
         let mut results = Vec::with_capacity(top_docs.len());
         for (_, doc_address) in top_docs {
@@ -91,11 +88,6 @@ impl Search {
             }
         }
         Ok(results)
-    }
-
-    fn calculate_top_lines(top_percent: u8, lines: usize) -> usize {
-        let top: usize = top_percent as usize;
-        std::cmp::max(1, (top * lines + 99) / 100)
     }
 
     fn subqueries(&self, text: &str) -> BooleanQuery {
@@ -125,22 +117,6 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn calculate_top_lines_should_round_up() {
-        assert_eq!(Search::calculate_top_lines(10, 100), 10);
-        assert_eq!(Search::calculate_top_lines(1, 100), 1);
-        assert_eq!(Search::calculate_top_lines(50, 3), 2);
-        assert_eq!(Search::calculate_top_lines(25, 7), 2);
-        assert_eq!(Search::calculate_top_lines(100, 5), 5);
-    }
-
-    #[test]
-    fn calculate_top_lines_should_never_return_zero() {
-        assert_eq!(Search::calculate_top_lines(0, 100), 1);
-        assert_eq!(Search::calculate_top_lines(0, 0), 1);
-        assert_eq!(Search::calculate_top_lines(50, 0), 1);
-    }
-
-    #[test]
     fn new_should_create_search() {
         let search = Search::new();
         assert!(search.is_ok());
@@ -168,7 +144,7 @@ mod tests {
         write(file.path(), "Lorem ipsum\ndolor sit amet...\nLorem else\n").unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query(&"Lorem".to_string(), 100).unwrap();
+        let result = search.query(&"Lorem".to_string()).unwrap();
         assert_eq!(result.len(), 2);
         let lines: Vec<String> = result.into_iter().map(|(_, _, line)| line).collect();
         assert!(lines.contains(&"Lorem ipsum".to_string()));
@@ -185,7 +161,7 @@ mod tests {
         .unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query(&"Lorem".to_string(), 100).unwrap();
+        let result = search.query(&"Lorem".to_string()).unwrap();
         let line_numbers: Vec<usize> = result
             .into_iter()
             .map(|(line_number, _, _)| line_number)
@@ -204,7 +180,7 @@ mod tests {
         .unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query(&"none".to_string(), 100).unwrap();
+        let result = search.query(&"none".to_string()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -214,7 +190,7 @@ mod tests {
         write(file.path(), "Lorem ipsum\n").unwrap();
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query(&"\"".to_string(), 100).unwrap();
+        let result = search.query(&"\"".to_string()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -225,22 +201,8 @@ mod tests {
         let mut search = Search::new().unwrap();
         search.index_lines(file.path().to_path_buf()).unwrap();
         // typo "Lorem" -> "Lroem"
-        let result = search.query(&"Lroem".to_string(), 100).unwrap();
+        let result = search.query(&"Lroem".to_string()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].2, "Lorem ipsum");
-    }
-
-    #[test]
-    fn query_should_limit_number_of_results() {
-        let file = NamedTempFile::new().unwrap();
-        write(
-            file.path(),
-            "apple one\napple two\napple three\napple four\n",
-        )
-        .unwrap();
-        let mut search = Search::new().unwrap();
-        search.index_lines(file.path().to_path_buf()).unwrap();
-        let result = search.query(&"apple".to_string(), 25).unwrap();
-        assert_eq!(result.len(), 1);
     }
 }

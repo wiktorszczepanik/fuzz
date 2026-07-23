@@ -10,7 +10,7 @@ use std::path::PathBuf;
 pub struct Cli {
     pub text: String,
     pub file_path: PathBuf,
-    #[arg(short, long, default_value_t = 50)]
+    #[arg(short, long, default_value_t = 100)]
     pub top: u8,
     #[arg(short, long)]
     pub lines: bool,
